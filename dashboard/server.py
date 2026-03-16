@@ -1,0 +1,294 @@
+#!/usr/bin/env python3
+"""
+JobBot — Local dashboard server.
+Serves the review UI at http://localhost:5555
+Also serves the setup wizard at http://localhost:5555/setup
+"""
+from __future__ import annotations
+
+import json
+import logging
+import os
+import subprocess
+import sys
+import webbrowser
+from datetime import date, datetime
+from pathlib import Path
+
+from flask import Flask, jsonify, request
+from flask_cors import CORS
+from dotenv import load_dotenv
+
+ROOT = Path(__file__).parent.parent
+DATA_DIR = ROOT / "data"
+APPS_DIR = DATA_DIR / "applications"
+SENT_DIR = DATA_DIR / "sent"
+SENT_DIR.mkdir(parents=True, exist_ok=True)
+LOG_DIR = ROOT / "logs"
+SETUP_DIR = Path(__file__).parent.parent / "setup"
+
+load_dotenv(ROOT / ".env")
+
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("dashboard")
+
+app = Flask(__name__)
+CORS(app)
+
+
+# ── Helpers ────────────────────────────────────────────────────────────────
+def get_latest_apps_file():  # -> Path | None
+    files = sorted(APPS_DIR.glob("applications_*.json"), reverse=True)
+    return files[0] if files else None
+
+
+def load_apps(date_str=None):  # -> list[dict]
+    if date_str:
+        f = APPS_DIR / f"applications_{date_str}.json"
+    else:
+        f = get_latest_apps_file()
+    if not f or not f.exists():
+        return []
+    return json.loads(f.read_text())
+
+
+def save_apps(apps, date_str=None):
+    if not date_str:
+        f = get_latest_apps_file()
+        if not f:
+            f = APPS_DIR / f"applications_{date.today().isoformat()}.json"
+    else:
+        f = APPS_DIR / f"applications_{date_str}.json"
+    f.write_text(json.dumps(apps, indent=2))
+
+
+def find_app(apps, app_id):  # -> tuple[int, dict | None]
+    for i, a in enumerate(apps):
+        if a["id"] == app_id:
+            return i, a
+    return -1, None
+
+
+# ── Setup wizard routes ────────────────────────────────────────────────────
+
+@app.route("/setup")
+def setup_wizard():
+    """Serve the onboarding wizard HTML."""
+    html_file = SETUP_DIR / "onboarding.html"
+    if html_file.exists():
+        return html_file.read_text()
+    return "<h1>Setup wizard not found.</h1><p>Make sure setup/onboarding.html exists.</p>", 404
+
+
+@app.route("/api/setup", methods=["POST"])
+def handle_setup():
+    """Receive form data from the onboarding wizard, write config files."""
+    try:
+        # Import here so the server can start even before setup files exist
+        import sys as _sys
+        _sys.path.insert(0, str(SETUP_DIR))
+        from setup_handler import handle_setup as _do_setup
+
+        data = request.json or {}
+        result = _do_setup(data, ROOT)
+        return jsonify(result)
+    except Exception as e:
+        log.error(f"Setup failed: {e}", exc_info=True)
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+# ── API Routes ─────────────────────────────────────────────────────────────
+
+@app.route("/api/applications")
+def list_applications():
+    date_str = request.args.get("date")
+    apps = load_apps(date_str)
+    summary = []
+    for a in apps:
+        summary.append({
+            "id": a["id"],
+            "title": a["job"]["title"],
+            "company": a["job"]["company"],
+            "location": a["job"].get("location", ""),
+            "source": a["job"]["source"],
+            "score": a.get("score", 0),
+            "fit_summary": a.get("fit_summary", ""),
+            "status": a.get("status", "pending_review"),
+            "url": a["job"]["url"],
+            "apply_url": a["apply_info"]["apply_url"],
+            "drafted_at": a.get("drafted_at", ""),
+            "sent_at": a.get("sent_at"),
+        })
+    summary.sort(key=lambda x: x["score"], reverse=True)
+    return jsonify(summary)
+
+
+@app.route("/api/application/<app_id>")
+def get_application(app_id):
+    apps = load_apps()
+    _, a = find_app(apps, app_id)
+    if not a:
+        return jsonify({"error": "Not found"}), 404
+    return jsonify(a)
+
+
+@app.route("/api/application/<app_id>", methods=["PATCH"])
+def update_application(app_id):
+    apps = load_apps()
+    idx, a = find_app(apps, app_id)
+    if not a:
+        return jsonify({"error": "Not found"}), 404
+
+    data = request.json
+    allowed = ["cover_letter", "about_me", "notes", "status"]
+    for k in allowed:
+        if k in data:
+            apps[idx][k] = data[k]
+
+    save_apps(apps)
+    return jsonify({"ok": True, "updated": app_id})
+
+
+@app.route("/api/application/<app_id>/approve", methods=["POST"])
+def approve_application(app_id):
+    """Mark as approved and open apply URL in browser."""
+    apps = load_apps()
+    idx, a = find_app(apps, app_id)
+    if not a:
+        return jsonify({"error": "Not found"}), 404
+
+    apps[idx]["status"] = "approved"
+    save_apps(apps)
+
+    apply_url = a["apply_info"]["apply_url"]
+    return jsonify({
+        "ok": True,
+        "apply_url": apply_url,
+        "prefill": a["apply_info"].get("prefill", {}),
+        "cover_letter": a["cover_letter"],
+        "about_me": a["about_me"]
+    })
+
+
+@app.route("/api/application/<app_id>/mark_sent", methods=["POST"])
+def mark_sent(app_id):
+    apps = load_apps()
+    idx, a = find_app(apps, app_id)
+    if not a:
+        return jsonify({"error": "Not found"}), 404
+
+    apps[idx]["status"] = "sent"
+    apps[idx]["sent_at"] = datetime.now().isoformat()
+    save_apps(apps)
+
+    sent_log = SENT_DIR / "sent_log.json"
+    existing = json.loads(sent_log.read_text()) if sent_log.exists() else []
+    existing.append({
+        "id": app_id,
+        "title": a["job"]["title"],
+        "company": a["job"]["company"],
+        "url": a["job"]["url"],
+        "sent_at": apps[idx]["sent_at"]
+    })
+    sent_log.write_text(json.dumps(existing, indent=2))
+
+    return jsonify({"ok": True, "sent_at": apps[idx]["sent_at"]})
+
+
+@app.route("/api/application/<app_id>/skip", methods=["POST"])
+def skip_application(app_id):
+    apps = load_apps()
+    idx, a = find_app(apps, app_id)
+    if not a:
+        return jsonify({"error": "Not found"}), 404
+    apps[idx]["status"] = "skipped"
+    save_apps(apps)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/stats")
+def stats():
+    sent_log = SENT_DIR / "sent_log.json"
+    sent = json.loads(sent_log.read_text()) if sent_log.exists() else []
+
+    apps_files = sorted(APPS_DIR.glob("applications_*.json"), reverse=True)
+    today_apps = load_apps()
+
+    pending = len([a for a in today_apps if a["status"] == "pending_review"])
+    approved = len([a for a in today_apps if a["status"] in ["approved", "sent"]])
+    skipped = len([a for a in today_apps if a["status"] == "skipped"])
+
+    return jsonify({
+        "total_sent": len(sent),
+        "today_pending": pending,
+        "today_approved": approved,
+        "today_skipped": skipped,
+        "days_active": len(apps_files),
+        "recent_sent": sent[-5:][::-1]
+    })
+
+
+@app.route("/api/dates")
+def available_dates():
+    files = sorted(APPS_DIR.glob("applications_*.json"), reverse=True)
+    dates = [f.stem.replace("applications_", "") for f in files]
+    return jsonify(dates)
+
+
+# ── Check setup state ──────────────────────────────────────────────────────
+@app.route("/api/status")
+def setup_status():
+    """Returns whether setup has been completed."""
+    profile_exists = (ROOT / "config" / "profile.json").exists()
+    env_exists = (ROOT / ".env").exists()
+    return jsonify({
+        "setup_complete": profile_exists and env_exists,
+        "has_profile": profile_exists,
+        "has_env": env_exists,
+    })
+
+
+# ── Serve dashboard HTML ───────────────────────────────────────────────────
+@app.route("/")
+@app.route("/dashboard")
+def dashboard():
+    html_file = Path(__file__).parent / "index.html"
+    if html_file.exists():
+        return html_file.read_text()
+    # No dashboard yet — redirect to setup
+    return '''<html><body style="background:#0d0d0f;color:#f0f0f5;font-family:sans-serif;
+        display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:16px">
+        <h2>Welcome to JobBot</h2>
+        <p style="color:#9090a8">Complete setup first to get started.</p>
+        <a href="/setup" style="background:#6c63ff;color:white;padding:12px 28px;
+        border-radius:8px;text-decoration:none;font-weight:600">Start Setup →</a>
+    </body></html>'''
+
+
+# ── Run ────────────────────────────────────────────────────────────────────
+if __name__ == "__main__":
+    port = int(os.getenv("DASHBOARD_PORT", "5555"))
+
+    # Check if first-time setup is needed
+    profile_path = ROOT / "config" / "profile.json"
+    if not profile_path.exists():
+        print(f"\n🚀 JobBot Dashboard")
+        print(f"   First run detected — opening setup wizard")
+        print(f"   http://localhost:{port}/setup\n")
+        import threading
+        def _open():
+            import time
+            time.sleep(1.5)
+            webbrowser.open(f"http://localhost:{port}/setup")
+        threading.Thread(target=_open, daemon=True).start()
+    else:
+        print(f"\n🚀 JobBot Dashboard")
+        print(f"   Opening http://localhost:{port}")
+        import threading
+        def _open():
+            import time
+            time.sleep(1.5)
+            webbrowser.open(f"http://localhost:{port}")
+        threading.Thread(target=_open, daemon=True).start()
+
+    app.run(host="127.0.0.1", port=port, debug=False)

@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>JobBot — Setup</title>
+<style>
+  :root {
+    --bg: #0d0d0f;
+    --surface: #16161a;
+    --surface2: #1e1e24;
+    --border: #2a2a35;
+    --accent: #6c63ff;
+    --accent2: #4ade80;
+    --warn: #f59e0b;
+    --text: #f0f0f5;
+    --text2: #9090a8;
+    --text3: #5a5a72;
+    --radius: 12px;
+    --radius-sm: 8px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 40px 20px 80px;
+  }
+
+  .logo {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 20px; font-weight: 700; margin-bottom: 8px;
+  }
+  .logo svg { width: 36px; height: 36px; }
+  .tagline { color: var(--text2); font-size: 14px; margin-bottom: 48px; }
+
+  /* Steps */
+  .steps {
+    display: flex; gap: 0; margin-bottom: 40px; position: relative;
+    width: 100%; max-width: 560px;
+  }
+  .step {
+    flex: 1; text-align: center; position: relative;
+  }
+  .step::after {
+    content: '';
+    position: absolute;
+    top: 14px; left: 50%; width: 100%;
+    height: 2px; background: var(--border); z-index: 0;
+  }
+  .step:last-child::after { display: none; }
+  .step-dot {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: var(--surface2); border: 2px solid var(--border);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700; color: var(--text3);
+    position: relative; z-index: 1; transition: all 0.2s;
+  }
+  .step.active .step-dot { background: var(--accent); border-color: var(--accent); color: white; }
+  .step.done .step-dot { background: var(--accent2); border-color: var(--accent2); color: #000; }
+  .step-label { font-size: 11px; color: var(--text3); margin-top: 6px; }
+  .step.active .step-label { color: var(--text2); }
+
+  /* Card */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 36px;
+    width: 100%; max-width: 560px;
+    display: none;
+  }
+  .card.active { display: block; }
+  .card-title { font-size: 22px; font-weight: 700; margin-bottom: 6px; letter-spacing: -0.3px; }
+  .card-sub { color: var(--text2); font-size: 14px; margin-bottom: 28px; line-height: 1.5; }
+
+  /* Form elements */
+  .field { margin-bottom: 20px; }
+  .field label {
+    display: block; font-size: 12px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.6px;
+    color: var(--text3); margin-bottom: 7px;
+  }
+  .field input, .field textarea, .field select {
+    width: 100%; background: var(--surface2);
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    color: var(--text); font-size: 14px; padding: 11px 14px;
+    outline: none; font-family: inherit; transition: border-color 0.15s;
+  }
+  .field input:focus, .field textarea:focus, .field select:focus {
+    border-color: var(--accent);
+  }
+  .field textarea { resize: vertical; min-height: 100px; line-height: 1.6; }
+  .field select { cursor: pointer; }
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .field-hint { font-size: 11px; color: var(--text3); margin-top: 5px; }
+
+  /* Upload zone */
+  .upload-zone {
+    border: 2px dashed var(--border); border-radius: var(--radius-sm);
+    padding: 32px; text-align: center; cursor: pointer;
+    transition: all 0.2s; background: var(--surface2);
+  }
+  .upload-zone:hover, .upload-zone.drag { border-color: var(--accent); background: rgba(108,99,255,0.05); }
+  .upload-zone svg { margin-bottom: 10px; opacity: 0.5; }
+  .upload-zone .uz-title { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+  .upload-zone .uz-sub { font-size: 12px; color: var(--text3); }
+  .upload-zone.has-file { border-color: var(--accent2); background: rgba(74,222,128,0.05); }
+  .upload-zone.has-file .uz-title { color: var(--accent2); }
+
+  /* Tag multi-select */
+  .tag-select { display: flex; flex-wrap: wrap; gap: 8px; }
+  .tag-option {
+    padding: 7px 14px; border-radius: 20px;
+    border: 1px solid var(--border); background: var(--surface2);
+    font-size: 13px; cursor: pointer; transition: all 0.15s; user-select: none;
+  }
+  .tag-option:hover { border-color: var(--accent); color: var(--accent); }
+  .tag-option.selected { border-color: var(--accent); background: rgba(108,99,255,0.15); color: var(--accent); }
+
+  /* Credential row */
+  .cred-row {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 14px; margin-bottom: 12px;
+  }
+  .cred-label {
+    grid-column: 1 / -1; font-size: 12px; font-weight: 600;
+    color: var(--text3); text-transform: uppercase; letter-spacing: 0.5px;
+    margin-bottom: 4px;
+  }
+  .cred-note {
+    grid-column: 1 / -1; font-size: 11px; color: var(--text3);
+    margin-top: 4px;
+  }
+
+  /* Nav buttons */
+  .card-nav {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--border);
+  }
+  .btn {
+    padding: 12px 28px; border-radius: var(--radius-sm);
+    font-size: 14px; font-weight: 600; cursor: pointer; border: none;
+    transition: all 0.15s; display: inline-flex; align-items: center; gap: 8px;
+  }
+  .btn-primary { background: var(--accent); color: white; }
+  .btn-primary:hover { background: #5a52e0; }
+  .btn-ghost { background: var(--surface2); color: var(--text2); border: 1px solid var(--border); }
+  .btn-ghost:hover { color: var(--text); }
+  .btn-success { background: var(--accent2); color: #000; font-weight: 700; }
+  .btn-success:hover { background: #22c55e; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* Progress bar */
+  .progress-bar {
+    width: 100%; max-width: 560px; height: 3px;
+    background: var(--border); border-radius: 2px; margin-bottom: 32px;
+  }
+  .progress-fill {
+    height: 100%; background: var(--accent); border-radius: 2px;
+    transition: width 0.3s ease;
+  }
+
+  /* Success screen */
+  .success-screen {
+    text-align: center; padding: 20px 0;
+  }
+  .success-icon {
+    width: 72px; height: 72px; background: rgba(74,222,128,0.1);
+    border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 20px;
+  }
+  .success-title { font-size: 26px; font-weight: 700; margin-bottom: 8px; }
+  .success-sub { color: var(--text2); font-size: 15px; line-height: 1.6; margin-bottom: 28px; }
+  .terminal-block {
+    background: #000; border: 1px solid var(--border); border-radius: var(--radius-sm);
+    padding: 16px 20px; text-align: left; font-family: 'SF Mono', monospace;
+    font-size: 13px; color: var(--accent2); margin-bottom: 20px;
+  }
+  .terminal-block .cmd { color: var(--text2); margin-bottom: 6px; }
+  .terminal-block .cmd::before { content: '$ '; color: var(--accent); }
+
+  .security-note {
+    background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.2);
+    border-radius: var(--radius-sm); padding: 12px 16px;
+    font-size: 12px; color: var(--warn); margin-top: 16px; line-height: 1.6;
+  }
+
+  .footer-credit { font-size: 11px; color: var(--text3); margin-top: 40px; }
+  .footer-credit a { color: var(--text3); text-decoration: none; }
+  .footer-credit a:hover { color: var(--text2); }
+</style>
+</head>
+<body>
+
+<!-- Logo -->
+<div class="logo">
+  <svg viewBox="0 0 36 36" fill="none" aria-label="JobBot">
+    <rect width="36" height="36" rx="9" fill="#6c63ff" fill-opacity="0.15"/>
+    <circle cx="18" cy="15" r="5.5" stroke="#6c63ff" stroke-width="1.8"/>
+    <path d="M9 30c0-4.97 4.03-9 9-9s9 4.03 9 9" stroke="#6c63ff" stroke-width="1.8" stroke-linecap="round"/>
+    <path d="M23 9l2-2M25 11h2M24 13.5l2 1" stroke="#4ade80" stroke-width="1.5" stroke-linecap="round"/>
+  </svg>
+  JobBot
+</div>
+<div class="tagline">Your personal internship &amp; job application engine</div>
+
+<!-- Progress -->
+<div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:20%"></div></div>
+
+<!-- Steps -->
+<div class="steps">
+  <div class="step active" id="s1"><div class="step-dot">1</div><div class="step-label">You</div></div>
+  <div class="step" id="s2"><div class="step-dot">2</div><div class="step-label">Resume</div></div>
+  <div class="step" id="s3"><div class="step-dot">3</div><div class="step-label">Job Prefs</div></div>
+  <div class="step" id="s4"><div class="step-dot">4</div><div class="step-label">Accounts</div></div>
+  <div class="step" id="s5"><div class="step-dot">5</div><div class="step-label">API Keys</div></div>
+</div>
+
+<!-- ── Step 1: Personal Info ── -->
+<div class="card active" id="card1">
+  <div class="card-title">Tell us about yourself</div>
+  <div class="card-sub">This info will be used to fill out application forms automatically.</div>
+
+  <div class="field-row">
+    <div class="field"><label>First Name</label><input type="text" id="firstName" placeholder="Alex"></div>
+    <div class="field"><label>Last Name</label><input type="text" id="lastName" placeholder="Chen"></div>
+  </div>
+  <div class="field"><label>Email</label><input type="email" id="email" placeholder="alex@email.com"></div>
+  <div class="field"><label>Phone</label><input type="tel" id="phone" placeholder="212-555-0100"></div>
+  <div class="field"><label>City / Location</label><input type="text" id="location" placeholder="New York, NY"></div>
+  <div class="field"><label>LinkedIn URL</label><input type="url" id="linkedin" placeholder="https://linkedin.com/in/yourname"></div>
+  <div class="field-row">
+    <div class="field"><label>University</label><input type="text" id="university" placeholder="NYU, Columbia, etc."></div>
+    <div class="field"><label>Grad Year</label><input type="text" id="gradYear" placeholder="2026"></div>
+  </div>
+  <div class="field"><label>Major / Field of Study</label><input type="text" id="major" placeholder="Business, CS, Marketing..."></div>
+
+  <div class="card-nav">
+    <div></div>
+    <button class="btn btn-primary" onclick="nextStep(1)">Continue →</button>
+  </div>
+</div>
+
+<!-- ── Step 2: Resume ── -->
+<div class="card" id="card2">
+  <div class="card-title">Upload your resume</div>
+  <div class="card-sub">We'll parse it to personalize your cover letters. PDF or plain text both work.</div>
+
+  <div class="upload-zone" id="uploadZone" onclick="document.getElementById('resumeFile').click()"
+    ondragover="handleDrag(event)" ondrop="handleDrop(event)" ondragleave="removeDrag()">
+    <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+      <path d="M20 28V12M13 19l7-7 7 7" stroke="#6c63ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M8 32h24" stroke="#6c63ff" stroke-width="2" stroke-linecap="round"/>
+    </svg>
+    <div class="uz-title" id="uzTitle">Click or drag your resume here</div>
+    <div class="uz-sub">PDF, DOCX, or TXT — max 5MB</div>
+  </div>
+  <input type="file" id="resumeFile" accept=".pdf,.docx,.txt" style="display:none" onchange="handleFileSelect(this)">
+
+  <div style="margin-top: 20px;">
+    <div class="field">
+      <label>Or paste your resume text</label>
+      <textarea id="resumeText" placeholder="Paste your full resume here...&#10;&#10;Education, work experience, skills, projects — everything." style="min-height:180px"></textarea>
+    </div>
+  </div>
+
+  <div class="card-nav">
+    <button class="btn btn-ghost" onclick="prevStep(2)">← Back</button>
+    <button class="btn btn-primary" onclick="nextStep(2)">Continue →</button>
+  </div>
+</div>
+
+<!-- ── Step 3: Job Preferences ── -->
+<div class="card" id="card3">
+  <div class="card-title">What are you looking for?</div>
+  <div class="card-sub">The bot will use this to find relevant jobs and write tailored cover letters.</div>
+
+  <div class="field">
+    <label>Job Type</label>
+    <div class="tag-select" id="jobTypeSelect">
+      <div class="tag-option selected" onclick="toggleTag(this)">Internship</div>
+      <div class="tag-option" onclick="toggleTag(this)">Full-time</div>
+      <div class="tag-option" onclick="toggleTag(this)">Part-time</div>
+      <div class="tag-option" onclick="toggleTag(this)">Contract</div>
+    </div>
+  </div>
+
+  <div class="field">
+    <label>Role Types (pick all that interest you)</label>
+    <div class="tag-select" id="roleTypeSelect">
+      <div class="tag-option selected" onclick="toggleTag(this)">Marketing</div>
+      <div class="tag-option selected" onclick="toggleTag(this)">Business Development</div>
+      <div class="tag-option selected" onclick="toggleTag(this)">Operations</div>
+      <div class="tag-option" onclick="toggleTag(this)">Product</div>
+      <div class="tag-option" onclick="toggleTag(this)">Software Engineering</div>
+      <div class="tag-option" onclick="toggleTag(this)">Data / Analytics</div>
+      <div class="tag-option selected" onclick="toggleTag(this)">Sales</div>
+      <div class="tag-option" onclick="toggleTag(this)">Finance</div>
+      <div class="tag-option" onclick="toggleTag(this)">Design</div>
+      <div class="tag-option" onclick="toggleTag(this)">Research</div>
+      <div class="tag-option selected" onclick="toggleTag(this)">Startup / Generalist</div>
+      <div class="tag-option" onclick="toggleTag(this)">VC / Investing</div>
+    </div>
+  </div>
+
+  <div class="field">
+    <label>Preferred Location</label>
+    <input type="text" id="prefLocation" placeholder="New York, NY" value="New York, NY">
+    <div class="field-hint">City, state — the bot will search within this area</div>
+  </div>
+
+  <div class="field">
+    <label>Availability</label>
+    <div class="field-row">
+      <div class="field" style="margin:0"><label>Start Date</label><input type="date" id="startDate"></div>
+      <div class="field" style="margin:0"><label>End Date</label><input type="date" id="endDate"></div>
+    </div>
+  </div>
+
+  <div class="field">
+    <label>Compensation</label>
+    <div class="tag-select" id="compSelect">
+      <div class="tag-option selected" onclick="toggleTagSingle(this, 'compSelect')">Paid only</div>
+      <div class="tag-option" onclick="toggleTagSingle(this, 'compSelect')">Open to unpaid</div>
+    </div>
+  </div>
+
+  <div class="field">
+    <label>Industries to target (optional)</label>
+    <input type="text" id="industries" placeholder="Tech, Finance, Media, Fashion, Healthcare...">
+    <div class="field-hint">Leave blank to cast a wide net</div>
+  </div>
+
+  <div class="field">
+    <label>Anything else the AI should know about what you want?</label>
+    <textarea id="extraContext" placeholder="e.g. I'm interested in startups, I want to work in a fast-paced environment, I'm passionate about sustainability..."></textarea>
+  </div>
+
+  <div class="card-nav">
+    <button class="btn btn-ghost" onclick="prevStep(3)">← Back</button>
+    <button class="btn btn-primary" onclick="nextStep(3)">Continue →</button>
+  </div>
+</div>
+
+<!-- ── Step 4: Job Board Credentials ── -->
+<div class="card" id="card4">
+  <div class="card-title">Job board accounts</div>
+  <div class="card-sub">Used to search and pre-fill applications. Stored only in your local <code style="background:var(--surface2);padding:2px 6px;border-radius:4px">.env</code> file — never sent anywhere.</div>
+
+  <div class="cred-row">
+    <div class="cred-label">LinkedIn</div>
+    <div class="field" style="margin:0"><label>Email</label><input type="email" id="liEmail" placeholder="you@gmail.com"></div>
+    <div class="field" style="margin:0"><label>Password</label><input type="password" id="liPass" placeholder="••••••••"></div>
+    <div class="cred-note">Used to access more job listings. Optional but recommended.</div>
+  </div>
+
+  <div class="cred-row">
+    <div class="cred-label">Handshake <span style="font-size:10px;color:var(--accent);margin-left:6px">For college students</span></div>
+    <div class="field" style="margin:0"><label>Email / Username</label><input type="text" id="hsEmail" placeholder="yourname@university.edu"></div>
+    <div class="field" style="margin:0"><label>Password</label><input type="password" id="hsPass" placeholder="••••••••"></div>
+    <div class="cred-note">Skip if not a student or don't have an account.</div>
+  </div>
+
+  <div class="security-note">
+    🔒 Credentials are written only to your local <strong>.env</strong> file and never transmitted. The bot runs entirely on your machine.
+  </div>
+
+  <div class="card-nav">
+    <button class="btn btn-ghost" onclick="prevStep(4)">← Back</button>
+    <button class="btn btn-primary" onclick="nextStep(4)">Continue →</button>
+  </div>
+</div>
+
+<!-- ── Step 5: API Keys ── -->
+<div class="card" id="card5">
+  <div class="card-title">Connect OpenAI</div>
+  <div class="card-sub">Required to generate tailored cover letters with GPT-4o. Costs ~$0.10/day for 10 applications.</div>
+
+  <div class="field">
+    <label>OpenAI API Key</label>
+    <input type="password" id="openaiKey" placeholder="sk-proj-...">
+    <div class="field-hint">
+      Get one at <a href="https://platform.openai.com/api-keys" target="_blank" style="color:var(--accent)">platform.openai.com/api-keys</a> — takes 30 seconds. We recommend setting a $5/month limit there too.
+    </div>
+  </div>
+
+  <div class="field">
+    <label>Daily Spend Limit</label>
+    <div class="tag-select" id="spendSelect">
+      <div class="tag-option" onclick="toggleTagSingle(this,'spendSelect')">$0.25/day</div>
+      <div class="tag-option selected" onclick="toggleTagSingle(this,'spendSelect')">$0.50/day</div>
+      <div class="tag-option" onclick="toggleTagSingle(this,'spendSelect')">$1.00/day</div>
+      <div class="tag-option" onclick="toggleTagSingle(this,'spendSelect')">No limit</div>
+    </div>
+    <div class="field-hint">The bot hard-stops AI generation if you hit this.</div>
+  </div>
+
+  <div class="field">
+    <label>Morning Digest Email (optional)</label>
+    <input type="email" id="digestEmail" placeholder="your@email.com">
+    <div class="field-hint">Get a daily summary email with your 10 drafted applications. Uses Gmail — you'll need an App Password.</div>
+  </div>
+
+  <div class="card-nav">
+    <button class="btn btn-ghost" onclick="prevStep(5)">← Back</button>
+    <button class="btn btn-success" onclick="finishSetup()">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Save & Launch Bot
+    </button>
+  </div>
+</div>
+
+<!-- ── Success ── -->
+<div class="card" id="cardSuccess">
+  <div class="success-screen">
+    <div class="success-icon">
+      <svg width="36" height="36" viewBox="0 0 36 36" fill="none"><path d="M7 18l7 7L29 10" stroke="#4ade80" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+    <div class="success-title">You're all set.</div>
+    <div class="success-sub">Your profile has been saved. Run the bot now to scrape your first batch of jobs and generate cover letters.</div>
+
+    <div class="terminal-block">
+      <div class="cmd">python3 run_daily.py</div>
+    </div>
+
+    <div style="font-size:13px;color:var(--text2);margin-bottom:20px">
+      Or wait — the bot will run automatically the next time you open your laptop.<br>
+      Dashboard will open at <a href="http://localhost:5555" style="color:var(--accent)">localhost:5555</a>
+    </div>
+
+    <a href="http://localhost:5555" class="btn btn-primary" style="text-decoration:none;display:inline-flex">
+      Open Dashboard →
+    </a>
+  </div>
+</div>
+
+<div class="footer-credit">
+  <a href="https://www.perplexity.ai/computer" target="_blank" rel="noopener noreferrer">Created with Perplexity Computer</a>
+</div>
+
+<script>
+let currentStep = 1;
+const TOTAL_STEPS = 5;
+
+function updateProgress(step) {
+  document.getElementById('progressFill').style.width = `${(step / TOTAL_STEPS) * 100}%`;
+  for (let i = 1; i <= TOTAL_STEPS; i++) {
+    const el = document.getElementById(`s${i}`);
+    el.className = 'step' + (i < step ? ' done' : i === step ? ' active' : '');
+    const dot = el.querySelector('.step-dot');
+    dot.textContent = i < step ? '✓' : i;
+  }
+}
+
+function nextStep(from) {
+  document.getElementById(`card${from}`).classList.remove('active');
+  const next = from + 1;
+  if (next > TOTAL_STEPS) return;
+  document.getElementById(`card${next}`).classList.add('active');
+  currentStep = next;
+  updateProgress(next);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function prevStep(from) {
+  document.getElementById(`card${from}`).classList.remove('active');
+  const prev = from - 1;
+  document.getElementById(`card${prev}`).classList.add('active');
+  currentStep = prev;
+  updateProgress(prev);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function toggleTag(el) {
+  el.classList.toggle('selected');
+}
+
+function toggleTagSingle(el, groupId) {
+  const group = document.getElementById(groupId);
+  group.querySelectorAll('.tag-option').forEach(t => t.classList.remove('selected'));
+  el.classList.add('selected');
+}
+
+function handleFileSelect(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const zone = document.getElementById('uploadZone');
+  zone.classList.add('has-file');
+  document.getElementById('uzTitle').textContent = `✓ ${file.name}`;
+
+  // Read text files directly
+  if (file.type === 'text/plain') {
+    const reader = new FileReader();
+    reader.onload = e => { document.getElementById('resumeText').value = e.target.result; };
+    reader.readAsText(file);
+  }
+}
+
+function handleDrag(e) {
+  e.preventDefault();
+  document.getElementById('uploadZone').classList.add('drag');
+}
+
+function removeDrag() {
+  document.getElementById('uploadZone').classList.remove('drag');
+}
+
+function handleDrop(e) {
+  e.preventDefault();
+  removeDrag();
+  const file = e.dataTransfer.files[0];
+  if (file) {
+    document.getElementById('resumeFile').files = e.dataTransfer.files;
+    handleFileSelect(document.getElementById('resumeFile'));
+  }
+}
+
+function getSelectedTags(containerId) {
+  const container = document.getElementById(containerId);
+  return Array.from(container.querySelectorAll('.tag-option.selected')).map(t => t.textContent.trim());
+}
+
+function finishSetup() {
+  // Collect all form values
+  const profile = {
+    name: `${document.getElementById('firstName').value} ${document.getElementById('lastName').value}`.trim(),
+    first_name: document.getElementById('firstName').value,
+    last_name: document.getElementById('lastName').value,
+    email: document.getElementById('email').value,
+    phone: document.getElementById('phone').value,
+    location: document.getElementById('location').value,
+    linkedin: document.getElementById('linkedin').value,
+    university: document.getElementById('university').value,
+    grad_year: document.getElementById('gradYear').value,
+    major: document.getElementById('major').value,
+    resume_text: document.getElementById('resumeText').value,
+    job_types: getSelectedTags('jobTypeSelect'),
+    role_types: getSelectedTags('roleTypeSelect'),
+    location_preference: document.getElementById('prefLocation').value,
+    availability_start: document.getElementById('startDate').value,
+    availability_end: document.getElementById('endDate').value,
+    paid_only: getSelectedTags('compSelect').includes('Paid only'),
+    industries: document.getElementById('industries').value,
+    extra_context: document.getElementById('extraContext').value,
+  };
+
+  const credentials = {
+    LINKEDIN_EMAIL: document.getElementById('liEmail').value,
+    LINKEDIN_PASSWORD: document.getElementById('liPass').value,
+    HANDSHAKE_EMAIL: document.getElementById('hsEmail').value,
+    HANDSHAKE_PASSWORD: document.getElementById('hsPass').value,
+    OPENAI_API_KEY: document.getElementById('openaiKey').value,
+    DIGEST_EMAIL: document.getElementById('digestEmail').value,
+    DAILY_SPEND_LIMIT: getSelectedTags('spendSelect')[0]?.replace('/day','').replace('$','').replace('No limit','999') || '0.45',
+    SMTP_HOST: 'smtp.gmail.com',
+    SMTP_PORT: '587',
+    SMTP_USER: '',
+    SMTP_PASS: '',
+    DASHBOARD_PORT: '5555',
+  };
+
+  // POST to local setup endpoint
+  fetch('http://localhost:5555/api/setup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ profile, credentials })
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.ok) {
+      // Show success
+      document.getElementById(`card${TOTAL_STEPS}`).classList.remove('active');
+      document.getElementById('cardSuccess').classList.add('active');
+      document.getElementById('progressFill').style.width = '100%';
+      for (let i = 1; i <= TOTAL_STEPS; i++) {
+        const el = document.getElementById(`s${i}`);
+        el.className = 'step done';
+        el.querySelector('.step-dot').textContent = '✓';
+      }
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else {
+      alert('Setup failed: ' + (data.error || 'Unknown error'));
+    }
+  })
+  .catch(() => {
+    alert('Could not connect to local server. Make sure the dashboard is running:\n\npython3 dashboard/server.py');
+  });
+}
+</script>
+
+</body>
+</html>
