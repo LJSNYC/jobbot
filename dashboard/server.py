@@ -11,6 +11,7 @@ import logging
 import os
 import subprocess
 import sys
+import tempfile
 import webbrowser
 from datetime import date, datetime
 from pathlib import Path
@@ -233,6 +234,61 @@ def available_dates():
     files = sorted(APPS_DIR.glob("applications_*.json"), reverse=True)
     dates = [f.stem.replace("applications_", "") for f in files]
     return jsonify(dates)
+
+
+# ── PDF Resume Parser ──────────────────────────────────────────────────────
+@app.route("/api/parse-resume", methods=["POST"])
+def parse_resume():
+    """Accept a PDF/DOCX/TXT upload and return extracted plain text (max 4k chars)."""
+    if "file" not in request.files:
+        return jsonify({"ok": False, "error": "No file uploaded"}), 400
+
+    f = request.files["file"]
+    filename = f.filename.lower()
+
+    try:
+        if filename.endswith(".txt"):
+            text = f.read().decode("utf-8", errors="ignore")
+
+        elif filename.endswith(".pdf"):
+            import io
+            pdf_bytes = f.read()
+            text = ""
+            try:
+                from pypdf import PdfReader
+                reader = PdfReader(io.BytesIO(pdf_bytes))
+                text = "\n".join(page.extract_text() or "" for page in reader.pages)
+            except ImportError:
+                try:
+                    from pdfminer.high_level import extract_text as pdfminer_extract
+                    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+                        tmp.write(pdf_bytes)
+                        tmp_path = tmp.name
+                    text = pdfminer_extract(tmp_path)
+                    os.unlink(tmp_path)
+                except ImportError:
+                    return jsonify({"ok": False, "error": "PDF parsing not available. Run: pip install pypdf"}), 500
+
+        elif filename.endswith(".docx"):
+            try:
+                import docx, io
+                doc = docx.Document(io.BytesIO(f.read()))
+                text = "\n".join(p.text for p in doc.paragraphs)
+            except ImportError:
+                return jsonify({"ok": False, "error": "DOCX parsing not available. Run: pip install python-docx"}), 500
+
+        else:
+            return jsonify({"ok": False, "error": "Unsupported file type. Use PDF, DOCX, or TXT."}), 400
+
+        # Clean up whitespace, truncate to 4k
+        text = "\n".join(line.strip() for line in text.splitlines() if line.strip())
+        text = text[:4000]
+
+        return jsonify({"ok": True, "text": text})
+
+    except Exception as e:
+        log.error(f"Resume parse error: {e}")
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 # ── Check setup state ──────────────────────────────────────────────────────
