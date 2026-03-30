@@ -20,6 +20,9 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from dotenv import load_dotenv
 
+sys.path.insert(0, str(Path(__file__).parent.parent / "scraper"))
+from score_jobs import extract_features, record_feedback, score_job, load_preferences
+
 ROOT = Path(__file__).parent.parent
 DATA_DIR = ROOT / "data"
 APPS_DIR = DATA_DIR / "applications"
@@ -104,19 +107,23 @@ def handle_setup():
 def list_applications():
     date_str = request.args.get("date")
     apps = load_apps(date_str)
+    prefs = load_preferences()
     summary = []
     for a in apps:
+        job = a.get("job", {})
+        pref_score = a.get("preference_score", score_job(job, prefs))
         summary.append({
             "id": a["id"],
-            "title": a["job"]["title"],
-            "company": a["job"]["company"],
-            "location": a["job"].get("location", ""),
-            "source": a["job"]["source"],
+            "title": job.get("title", ""),
+            "company": job.get("company", ""),
+            "location": job.get("location", ""),
+            "source": job.get("source", ""),
             "score": a.get("score", 0),
+            "preference_score": pref_score,
             "fit_summary": a.get("fit_summary", ""),
             "status": a.get("status", "pending_review"),
-            "url": a["job"]["url"],
-            "apply_url": a["apply_info"]["apply_url"],
+            "url": job.get("url", ""),
+            "apply_url": a.get("apply_info", {}).get("apply_url", ""),
             "drafted_at": a.get("drafted_at", ""),
             "sent_at": a.get("sent_at"),
         })
@@ -130,6 +137,9 @@ def get_application(app_id):
     _, a = find_app(apps, app_id)
     if not a:
         return jsonify({"error": "Not found"}), 404
+    # Include live preference score
+    prefs = load_preferences()
+    a["preference_score"] = a.get("preference_score", score_job(a.get("job", {}), prefs))
     return jsonify(a)
 
 
@@ -207,6 +217,40 @@ def skip_application(app_id):
     return jsonify({"ok": True})
 
 
+@app.route("/api/feedback", methods=["POST"])
+def feedback():
+    """
+    Record approve/skip feedback for preference learning.
+    Expects JSON: { job_id, action: "approve"|"skip", job_data: {company, title, description, source} }
+    Extracts features, updates weights in preferences.json, and marks the job status.
+    """
+    data = request.json or {}
+    job_id = data.get("job_id")
+    action = data.get("action")
+    job_data_raw = data.get("job_data", {})
+
+    if action not in ("approve", "skip"):
+        return jsonify({"ok": False, "error": "action must be 'approve' or 'skip'"}), 400
+
+    # Extract features from the raw job data
+    features = extract_features(job_data_raw)
+
+    # Record feedback and update weights
+    prefs = record_feedback(action, features)
+
+    # Also update the application status in the file
+    if job_id:
+        apps = load_apps()
+        idx, a = find_app(apps, job_id)
+        if a is not None:
+            new_status = "approved" if action == "approve" else "skipped"
+            apps[idx]["status"] = new_status
+            apps[idx]["preference_score"] = score_job(a.get("job", {}), prefs)
+            save_apps(apps)
+
+    return jsonify({"ok": True, "action": action, "weights": prefs["weights"]})
+
+
 @app.route("/api/stats")
 def stats():
     sent_log = SENT_DIR / "sent_log.json"
@@ -234,6 +278,73 @@ def available_dates():
     files = sorted(APPS_DIR.glob("applications_*.json"), reverse=True)
     dates = [f.stem.replace("applications_", "") for f in files]
     return jsonify(dates)
+
+
+@app.route("/api/history")
+def application_history():
+    """
+    Return all applications Leo has ever marked as sent, across all dates.
+    Reads sent_log.json for sent records, cross-references applications files
+    for cover letters. Skipped jobs are excluded.
+    """
+    sent_log = SENT_DIR / "sent_log.json"
+    sent_records = json.loads(sent_log.read_text()) if sent_log.exists() else []
+
+    # Build a quick lookup: app_id -> date string
+    # Also scan all applications files for cover letters
+    cover_letters = {}
+    for apps_file in sorted(APPS_DIR.glob("applications_*.json"), reverse=True):
+        date_str = apps_file.stem.replace("applications_", "")
+        try:
+            apps = json.loads(apps_file.read_text())
+            for a in apps:
+                if a.get("status") in ("sent", "approved"):
+                    cover_letters[a["id"]] = {
+                        "cover_letter": a.get("cover_letter", ""),
+                        "about_me": a.get("about_me", ""),
+                        "apply_url": a.get("apply_info", {}).get("apply_url", ""),
+                        "fit_summary": a.get("fit_summary", ""),
+                        "date": date_str,
+                        "title": a.get("job", {}).get("title", ""),
+                        "company": a.get("job", {}).get("company", ""),
+                        "url": a.get("job", {}).get("url", ""),
+                        "source": a.get("job", {}).get("source", ""),
+                    }
+        except Exception:
+            continue
+
+    # Merge sent_log with cover letter data
+    history = []
+    seen_ids = set()
+    for record in reversed(sent_records):  # newest first after reversing
+        rid = record["id"]
+        if rid in seen_ids:
+            continue
+        seen_ids.add(rid)
+        entry = {
+            "id": rid,
+            "title": record.get("title", ""),
+            "company": record.get("company", ""),
+            "url": record.get("url", ""),
+            "sent_at": record.get("sent_at", ""),
+            "cover_letter": "",
+            "about_me": "",
+            "apply_url": "",
+            "fit_summary": "",
+            "source": "",
+            "date": record.get("sent_at", "")[:10] if record.get("sent_at") else "",
+        }
+        if rid in cover_letters:
+            entry.update(cover_letters[rid])
+        history.append(entry)
+
+    # Also include approved-but-not-in-sent-log (e.g. approved this session)
+    for rid, data in cover_letters.items():
+        if rid not in seen_ids:
+            history.append({"id": rid, **data, "sent_at": "", "apply_url": data.get("apply_url", "")})
+
+    history.sort(key=lambda x: x.get("sent_at", "") or x.get("date", ""), reverse=True)
+    return jsonify(history)
 
 
 # ── PDF Resume Parser ──────────────────────────────────────────────────────

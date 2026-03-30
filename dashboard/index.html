@@ -181,6 +181,51 @@
       overflow: hidden;
     }
 
+    /* ── Recommended badge ── */
+    .recommended-badge {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 20px;
+      background: rgba(74,222,128,0.15);
+      color: var(--accent2);
+      white-space: nowrap;
+    }
+
+    /* ── Feedback buttons on cards ── */
+    .feedback-btns {
+      display: flex;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .fb-btn {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 4px 12px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      color: var(--text2);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .fb-btn:hover { border-color: var(--accent); color: var(--text); }
+    .fb-btn-approve:hover { border-color: var(--accent2); color: var(--accent2); }
+    .fb-btn-skip:hover { border-color: var(--danger); color: var(--danger); }
+    .fb-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ── Reviewed state on cards ── */
+    .job-card.status-approved { border-left-color: var(--accent2); }
+    .job-card.status-approved .job-title::after {
+      content: ' ✓';
+      color: var(--accent2);
+      font-size: 12px;
+    }
+    .job-card.reviewed-state {
+      opacity: 0.55;
+    }
+    .job-card.reviewed-state:hover { opacity: 0.8; }
+
     /* ── Detail pane ── */
     .detail {
       overflow-y: auto;
@@ -412,6 +457,28 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
+    .tab-nav {
+      display: flex;
+      gap: 4px;
+      padding: 0 32px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg);
+    }
+    .tab-btn {
+      background: none;
+      border: none;
+      color: var(--text3);
+      font-size: 13px;
+      font-weight: 600;
+      padding: 12px 18px;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      transition: color .15s, border-color .15s;
+    }
+    .tab-btn:hover { color: var(--text1); }
+    .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
     .footer-credit {
       font-size: 11px;
       color: var(--text3);
@@ -448,8 +515,14 @@
   </div>
 </div>
 
+<!-- Tab Nav -->
+<div class="tab-nav">
+  <button class="tab-btn active" id="tabToday" onclick="switchTab('today')">Today's Applications</button>
+  <button class="tab-btn" id="tabHistory" onclick="switchTab('history')">Applied Jobs</button>
+</div>
+
 <!-- Layout -->
-<div class="layout">
+<div class="layout" id="panelToday">
   <!-- Sidebar -->
   <div class="sidebar" id="sidebar">
     <div class="sidebar-header" id="sidebarHeader">Loading...</div>
@@ -464,6 +537,13 @@
       <div style="font-size:13px">Review, edit, then launch to apply</div>
     </div>
   </div>
+</div>
+
+</div><!-- close panelToday -->
+
+<!-- Applied Jobs History Panel -->
+<div id="panelHistory" style="display:none;padding:24px 32px;max-width:1100px;margin:0 auto">
+  <div id="historyContent"><div class="loading"><div class="spinner"></div>Loading history...</div></div>
 </div>
 
 <!-- Toast -->
@@ -525,20 +605,33 @@ function renderSidebar() {
   
   const sorted = [...pending, ...rest];
   
-  document.getElementById('jobList').innerHTML = sorted.map(a => `
-    <div class="job-card status-${a.status} ${currentId === a.id ? 'active' : ''}" onclick="selectApp('${a.id}')">
+  document.getElementById('jobList').innerHTML = sorted.map(a => {
+    const isReviewed = a.status === 'approved' || a.status === 'skipped' || a.status === 'sent';
+    const prefScore = a.preference_score || 0;
+    const isRecommended = prefScore > 2;
+    return `
+    <div class="job-card status-${a.status} ${currentId === a.id ? 'active' : ''} ${isReviewed ? 'reviewed-state' : ''}" onclick="selectApp('${a.id}')">
       <div class="job-card-top">
         <div class="job-title">${escHtml(a.title)}</div>
-        <div class="score-badge ${a.score >= 7 ? 'high' : 'med'}">${a.score.toFixed(1)}</div>
+        <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
+          ${isRecommended ? '<span class="recommended-badge">⭐ Recommended</span>' : ''}
+          <div class="score-badge ${a.score >= 7 ? 'high' : 'med'}">${a.score.toFixed(1)}</div>
+        </div>
       </div>
       <div class="job-company">${escHtml(a.company)}</div>
       <div class="job-meta">
         <span class="tag tag-source">${a.source}</span>
         <span class="tag tag-status-${a.status}">${statusLabel(a.status)}</span>
+        ${prefScore !== 0 ? `<span style="font-size:10px;color:var(--text3)">pref: ${prefScore > 0 ? '+' : ''}${prefScore.toFixed(1)}</span>` : ''}
       </div>
       ${a.fit_summary ? `<div class="fit-snippet">${escHtml(a.fit_summary)}</div>` : ''}
-    </div>
-  `).join('');
+      ${!isReviewed ? `
+      <div class="feedback-btns" onclick="event.stopPropagation()">
+        <button class="fb-btn fb-btn-approve" onclick="sendFeedback('${a.id}', 'approve', this)" title="Interested">✓ Approve</button>
+        <button class="fb-btn fb-btn-skip" onclick="sendFeedback('${a.id}', 'skip', this)" title="Not interested">✗ Skip</button>
+      </div>` : ''}
+    </div>`;
+  }).join('');
 }
 
 function statusLabel(s) {
@@ -570,6 +663,7 @@ function renderDetail(app) {
       <div class="detail-meta">
         <span class="tag tag-source">${j.source}</span>
         <span class="tag tag-status-${app.status}">${statusLabel(app.status)}</span>
+        ${(app.preference_score || 0) > 2 ? '<span class="recommended-badge">⭐ Recommended</span>' : ''}
         <a href="${j.url}" target="_blank">View Listing ↗</a>
         ${app.sent_at ? `<span style="font-size:12px;color:var(--text3)">Sent ${formatDateTime(app.sent_at)}</span>` : ''}
       </div>
@@ -675,6 +769,45 @@ async function skipApp(id) {
   document.getElementById('detail').innerHTML = `<div class="detail-empty"><svg width="64" height="64" viewBox="0 0 64 64" fill="none"><rect x="12" y="8" width="40" height="48" rx="6" stroke="#6c63ff" stroke-width="2"/><path d="M20 20h24M20 28h24M20 36h16" stroke="#6c63ff" stroke-width="2" stroke-linecap="round"/></svg><div style="font-size:16px; color: var(--text2)">Select an application to review</div></div>`;
 }
 
+// ── Preference feedback ─────────────────────────────────────────────────────
+async function sendFeedback(id, action, btnEl) {
+  // Find the app data from our loaded list
+  const app = currentApps.find(a => a.id === id);
+  if (!app) return;
+
+  // Disable buttons immediately
+  const container = btnEl.parentElement;
+  container.querySelectorAll('button').forEach(b => b.disabled = true);
+  btnEl.textContent = action === 'approve' ? '✓ Approved' : '✗ Skipped';
+
+  try {
+    const res = await fetch(`${API}/api/feedback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        job_id: id,
+        action: action,
+        job_data: {
+          company: app.company || '',
+          title: app.title || '',
+          description: '',
+          source: app.source || '',
+        }
+      })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      showToast(action === 'approve' ? 'Approved — preferences updated' : 'Skipped — preferences updated', 'success');
+      // Reload to reflect new status and scores
+      await loadApplications();
+      renderSidebar();
+    }
+  } catch (e) {
+    showToast('Feedback failed: ' + e.message, 'error');
+    container.querySelectorAll('button').forEach(b => b.disabled = false);
+  }
+}
+
 // ── Auto-save ──────────────────────────────────────────────────────────────
 function autoSave(id, field, value) {
   clearTimeout(saveTimeout);
@@ -723,6 +856,102 @@ function formatDateTime(d) {
 }
 
 boot();
+
+// ── Tab switching ──────────────────────────────────────────────────────────
+function switchTab(tab) {
+  if (tab === 'today') {
+    document.getElementById('panelToday').style.display = '';
+    document.getElementById('panelHistory').style.display = 'none';
+    document.getElementById('tabToday').classList.add('active');
+    document.getElementById('tabHistory').classList.remove('active');
+  } else {
+    document.getElementById('panelToday').style.display = 'none';
+    document.getElementById('panelHistory').style.display = '';
+    document.getElementById('tabToday').classList.remove('active');
+    document.getElementById('tabHistory').classList.add('active');
+    loadHistory();
+  }
+}
+
+async function loadHistory() {
+  const container = document.getElementById('historyContent');
+  container.innerHTML = '<div class="loading"><div class="spinner"></div>Loading your application history...</div>';
+  try {
+    const res = await fetch(`${API}/api/history`);
+    const history = await res.json();
+    renderHistory(history);
+  } catch (e) {
+    container.innerHTML = `<div style="color:var(--text3);padding:40px;text-align:center">Failed to load history: ${e.message}</div>`;
+  }
+}
+
+function renderHistory(history) {
+  const container = document.getElementById('historyContent');
+  if (!history.length) {
+    container.innerHTML = `
+      <div style="text-align:center;padding:80px 20px;color:var(--text3)">
+        <svg width="64" height="64" viewBox="0 0 64 64" fill="none" style="margin-bottom:16px"><rect x="12" y="8" width="40" height="48" rx="6" stroke="#6c63ff" stroke-width="2"/><path d="M20 20h24M20 28h24M20 36h16" stroke="#6c63ff" stroke-width="2" stroke-linecap="round"/></svg>
+        <div style="font-size:16px;margin-bottom:8px">No sent applications yet</div>
+        <div style="font-size:13px">Applications you mark as Sent will appear here</div>
+      </div>`;
+    return;
+  }
+
+  // Group by date
+  const groups = {};
+  history.forEach(h => {
+    const d = h.date || h.sent_at?.slice(0, 10) || 'Unknown';
+    if (!groups[d]) groups[d] = [];
+    groups[d].push(h);
+  });
+
+  let html = `<div style="margin-bottom:16px;color:var(--text2);font-size:13px">${history.length} application${history.length !== 1 ? 's' : ''} sent</div>`;
+
+  Object.entries(groups).sort((a,b) => b[0].localeCompare(a[0])).forEach(([date, apps]) => {
+    html += `
+      <div style="margin-bottom:32px">
+        <div style="font-size:12px;font-weight:700;color:var(--text3);letter-spacing:.08em;text-transform:uppercase;margin-bottom:12px">${formatDate(date)}</div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          ${apps.map(a => `
+            <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 20px;display:flex;align-items:center;gap:16px">
+              <div style="flex:1;min-width:0">
+                <div style="font-size:14px;font-weight:600;color:var(--text1);margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(a.title)}</div>
+                <div style="font-size:12px;color:var(--text2)">${escHtml(a.company)} ${a.source ? '· <span style="color:var(--text3)">' + escHtml(a.source) + '</span>' : ''}</div>
+              </div>
+              <div style="display:flex;gap:8px;flex-shrink:0">
+                ${a.url ? `<a href="${escHtml(a.url)}" target="_blank" style="font-size:12px;color:var(--accent);text-decoration:none;padding:6px 12px;border:1px solid var(--accent);border-radius:6px;white-space:nowrap">View Listing ↗</a>` : ''}
+                ${a.cover_letter ? `<button onclick="openHistoryModal(${JSON.stringify(escHtml(a.title))}, ${JSON.stringify(escHtml(a.cover_letter))}, ${JSON.stringify(escHtml(a.about_me || ''))})" style="font-size:12px;background:var(--accent);color:white;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;white-space:nowrap">View Application</button>` : ''}
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>`;
+  });
+
+  container.innerHTML = html;
+}
+
+function openHistoryModal(title, coverLetter, aboutMe) {
+  // Remove existing modal if any
+  const existing = document.getElementById('historyModal');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'historyModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;display:flex;align-items:center;justify-content:center;padding:24px';
+  modal.innerHTML = `
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:16px;max-width:700px;width:100%;max-height:80vh;overflow-y:auto;padding:32px;position:relative">
+      <button onclick="document.getElementById('historyModal').remove()" style="position:absolute;top:16px;right:16px;background:none;border:none;color:var(--text3);font-size:20px;cursor:pointer">✕</button>
+      <div style="font-size:16px;font-weight:700;margin-bottom:20px;color:var(--text1)">${title}</div>
+      <div style="font-size:12px;font-weight:600;color:var(--text3);margin-bottom:6px;letter-spacing:.06em;text-transform:uppercase">Cover Letter</div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px;font-size:13px;color:var(--text2);line-height:1.7;white-space:pre-wrap;margin-bottom:16px">${coverLetter}</div>
+      ${aboutMe ? `
+      <div style="font-size:12px;font-weight:600;color:var(--text3);margin-bottom:6px;letter-spacing:.06em;text-transform:uppercase">About Me</div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px;font-size:13px;color:var(--text2);line-height:1.7;white-space:pre-wrap">${aboutMe}</div>` : ''}
+    </div>`;
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  document.body.appendChild(modal);
+}
 </script>
 
 <div class="footer-credit">
