@@ -98,9 +98,40 @@ def get_client():  # -> OpenAI
     return OpenAI(api_key=api_key)
 
 # ── Score job relevance ────────────────────────────────────────────────────
-# ── Location scoring ──────────────────────────────────────────────────────
-# No hard location filter — applications accepted from anywhere.
-# Brooklyn and Manhattan jobs get a small score bonus as priority locations.
+# ── Borough filter & scoring ──────────────────────────────────────────────
+BOROUGH_WHITELIST = [
+    "brooklyn", "manhattan", "queens", "staten island",
+    "new york, ny", "new york city", "nyc", "new york, new york"
+]
+# These get a score BOOST (Brooklyn + Manhattan below 125th are priority)
+PRIORITY_BOROUGHS = ["brooklyn", "manhattan"]
+# Hard-exclude uptown Manhattan
+UPTOWN_SIGNALS = ["harlem", "washington heights", "inwood", "bronx"]
+
+def is_allowed_location(job):
+    """
+    Returns True if the job is in an allowed NYC borough.
+    Filters OUT: Bronx, uptown Manhattan (125th+), NJ, CT, remote-only outside NYC.
+    """
+    loc = (job.get("location") or "").lower()
+    desc = (job.get("description") or "").lower()
+    combined = loc + " " + desc[:300]
+
+    # Hard excludes
+    for signal in UPTOWN_SIGNALS:
+        if signal in loc:  # only check location field for uptown, not full desc
+            return False
+
+    # Must match at least one allowed borough/city
+    for borough in BOROUGH_WHITELIST:
+        if borough in combined:
+            return True
+
+    # If location is blank or just "New York" assume ok
+    if not loc or loc.strip() in ["", "new york", "ny"]:
+        return True
+
+    return False
 
 def borough_score_bonus(job):
     """Extra points for Brooklyn and lower Manhattan jobs."""
@@ -343,7 +374,7 @@ def run_drafter(num_apps: int = 10) -> list[dict]:
     log.info(f"Loaded {len(jobs)} jobs")
 
     profile = load_profile()
-    resume = load_resume()[:4000]  # Truncate to 4k chars to keep token usage lean
+    resume = load_resume()
 
     api_key = os.getenv("OPENAI_API_KEY", "")
     try:
@@ -362,6 +393,11 @@ def run_drafter(num_apps: int = 10) -> list[dict]:
         use_ai = False
         client = None
         current_spend = 0.0
+
+    # Borough filter — only keep allowed NYC locations
+    before = len(jobs)
+    jobs = [j for j in jobs if is_allowed_location(j)]
+    log.info(f"Borough filter: {before} → {len(jobs)} jobs (removed {before - len(jobs)} outside target boroughs)")
 
     # Score and rank
     for job in jobs:
