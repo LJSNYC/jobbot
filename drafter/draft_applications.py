@@ -24,7 +24,8 @@ PER_CALL_MAX_TOKENS = 500  # Cap per cover letter / about-me generation
 def get_todays_spend(api_key):  # -> float
     """
     Fetch today's OpenAI usage cost via the usage API.
-    Returns spend in USD. Returns 0.0 if the call fails (fail open, not closed).
+    Returns spend in USD. Returns float('inf') on any failure so the
+    spend guardrail fails CLOSED — no AI generation if cost is unknown.
     """
     today = date.today().isoformat()
     try:
@@ -36,15 +37,14 @@ def get_todays_spend(api_key):  # -> float
         )
         if resp.status_code == 200:
             data = resp.json()
-            # Usage API returns cost in USD cents — divide by 100
-            total_cents = data.get("total_usage", 0)  # in cents
+            total_cents = data.get("total_usage", 0)
             return total_cents / 100.0
         else:
-            log.warning(f"Usage API returned {resp.status_code} — skipping spend check")
-            return 0.0
+            log.warning(f"Usage API returned {resp.status_code} — failing closed, halting AI generation")
+            return float('inf')
     except Exception as e:
-        log.warning(f"Could not fetch usage: {e} — skipping spend check")
-        return 0.0
+        log.warning(f"Could not fetch usage: {e} — failing closed, halting AI generation")
+        return float('inf')
 
 def check_spend_limit(api_key):  # -> tuple[bool, float]
     """
