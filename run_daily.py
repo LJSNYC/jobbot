@@ -69,10 +69,11 @@ def start_dashboard():
             return
 
     log.info("Starting dashboard server...")
+    _dashboard_log = open(LOG_DIR / "dashboard.log", "a")
     subprocess.Popen(
         [sys.executable, str(ROOT / "dashboard" / "server.py")],
         cwd=str(ROOT),
-        stdout=open(LOG_DIR / "dashboard.log", "a"),
+        stdout=_dashboard_log,
         stderr=subprocess.STDOUT,
     )
     time.sleep(2)
