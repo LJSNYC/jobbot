@@ -109,51 +109,21 @@ def get_client():  # -> OpenAI
     return OpenAI(api_key=api_key)
 
 # ── Score job relevance ────────────────────────────────────────────────────
-# ── Borough filter & scoring ──────────────────────────────────────────────
-BOROUGH_WHITELIST = [
-    "brooklyn", "manhattan", "queens", "staten island",
-    "new york, ny", "new york city", "nyc", "new york, new york"
-]
-# These get a score BOOST (Brooklyn + Manhattan below 125th are priority)
-PRIORITY_BOROUGHS = ["brooklyn", "manhattan"]
-# Hard-exclude uptown Manhattan
-UPTOWN_SIGNALS = ["harlem", "washington heights", "inwood", "bronx"]
 
-def is_allowed_location(job):
+def is_allowed_location(job: dict, profile: dict) -> bool:
     """
-    Returns True if the job is in an allowed NYC borough.
-    Filters OUT: Bronx, uptown Manhattan (125th+), NJ, CT, remote-only outside NYC.
+    Returns True if the job location matches the user's location_preference.
+    Accepts jobs with blank location (benefit of the doubt).
+    Accepts all jobs if user prefers remote or has no preference set.
     """
-    loc = (job.get("location") or "").lower()
-    desc = (job.get("description") or "").lower()
-    combined = loc + " " + desc[:300]
-
-    # Hard excludes
-    for signal in UPTOWN_SIGNALS:
-        if signal in loc:  # only check location field for uptown, not full desc
-            return False
-
-    # Must match at least one allowed borough/city
-    for borough in BOROUGH_WHITELIST:
-        if borough in combined:
-            return True
-
-    # If location is blank or just "New York" assume ok
-    if not loc or loc.strip() in ["", "new york", "ny"]:
+    pref = (profile.get("location_preference") or "").lower().strip()
+    if not pref or "remote" in pref:
         return True
-
-    return False
-
-def borough_score_bonus(job):
-    """Extra points for Brooklyn and lower Manhattan jobs."""
-    loc = (job.get("location") or "").lower()
-    desc = (job.get("description") or "").lower()
-    combined = loc + " " + desc[:200]
-    if "brooklyn" in combined:
-        return 1.5
-    if "manhattan" in combined:
-        return 1.0
-    return 0.0
+    job_loc = (job.get("location") or "").lower()
+    if not job_loc:
+        return True
+    city = pref.split(",")[0].strip()
+    return city in job_loc
 
 def score_job(job, profile):  # was: score_job(job: dict, profile: dict) -> float:
     """Heuristic score 0-10 for how good a fit this job is for the applicant."""
@@ -165,17 +135,13 @@ def score_job(job, profile):  # was: score_job(job: dict, profile: dict) -> floa
     # Positive signals
     good_terms = [
         "intern", "internship", "summer", "startup", "growth", "marketing",
-        "sales", "business development", "operations", "venture", "vc",
-        "product", "generalist", "founder", "early stage", "social media",
+        "sales", "business development", "operations", "product", "generalist",
         "content", "brand", "partnerships", "strategy", "analyst", "associate",
-        "entrepreneur", "innovation", "technology", "digital", "e-commerce"
+        "innovation", "technology", "digital", "e-commerce",
     ]
     for term in good_terms:
         if term in combined:
             score += 0.3
-
-    # NYC borough weight + priority bonus
-    score += borough_score_bonus(job)
 
     # Paid signal
     pay_terms = ["paid", "stipend", "compensation", "salary", "$", "hourly"]
@@ -408,10 +374,10 @@ def run_drafter(num_apps: int = 10) -> list[dict]:
         client = None
         current_spend = 0.0
 
-    # Borough filter — only keep allowed NYC locations
+    # Generic location filter — uses user's location_preference from profile
     before = len(jobs)
-    jobs = [j for j in jobs if is_allowed_location(j)]
-    log.info(f"Borough filter: {before} → {len(jobs)} jobs (removed {before - len(jobs)} outside target boroughs)")
+    jobs = [j for j in jobs if is_allowed_location(j, profile)]
+    log.info(f"Location filter: {before} → {len(jobs)} jobs removed outside target location")
 
     # Score and rank
     for job in jobs:
