@@ -34,11 +34,22 @@ BLOCKED_COMPANIES_FILE = DATA_DIR / "blocked_companies.json"
 
 load_dotenv(ROOT / ".env")
 
+import re as _re
+
+_DATE_RE = _re.compile(r'^\d{4}-\d{2}-\d{2}$')
+
+
+def _validate_date_str(date_str: str) -> None:
+    """Reject any date_str that isn't plain YYYY-MM-DD — prevents path traversal."""
+    if not _DATE_RE.match(date_str):
+        raise ValueError(f"Invalid date format: {date_str!r}")
+
+
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("dashboard")
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, origins=["http://localhost:5555"])
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────
@@ -49,12 +60,17 @@ def get_latest_apps_file():  # -> Path | None
 
 def load_apps(date_str=None):  # -> list[dict]
     if date_str:
+        _validate_date_str(date_str)
         f = APPS_DIR / f"applications_{date_str}.json"
     else:
         f = get_latest_apps_file()
     if not f or not f.exists():
         return []
-    return json.loads(f.read_text())
+    try:
+        return json.loads(f.read_text())
+    except (json.JSONDecodeError, ValueError):
+        log.warning(f"Applications file {f.name} is corrupted — returning empty list")
+        return []
 
 
 def save_apps(apps, date_str=None):
@@ -63,6 +79,7 @@ def save_apps(apps, date_str=None):
         if not f:
             f = APPS_DIR / f"applications_{date.today().isoformat()}.json"
     else:
+        _validate_date_str(date_str)
         f = APPS_DIR / f"applications_{date_str}.json"
     f.write_text(json.dumps(apps, indent=2))
 
@@ -120,6 +137,11 @@ def handle_setup():
 @app.route("/api/applications")
 def list_applications():
     date_str = request.args.get("date")
+    if date_str:
+        try:
+            _validate_date_str(date_str)
+        except ValueError:
+            return jsonify({"error": "Invalid date format — expected YYYY-MM-DD"}), 400
     apps = load_apps(date_str)
     prefs = load_preferences()
     summary = []

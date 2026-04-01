@@ -27,3 +27,34 @@ def test_sanitize_leaves_clean_value_unchanged():
 def test_sanitize_handles_non_string():
     from setup_handler import _sanitize_env_val
     assert _sanitize_env_val(None) == "None"
+
+
+# ── Path traversal tests ──────────────────────────────────────────────────
+
+def test_valid_date_passes():
+    from server import _validate_date_str
+    _validate_date_str("2026-03-31")  # must not raise
+
+
+def test_path_traversal_rejected():
+    from server import _validate_date_str
+    with pytest.raises(ValueError):
+        _validate_date_str("../../../etc/passwd")
+
+
+def test_traversal_with_mixed_path():
+    from server import _validate_date_str
+    with pytest.raises(ValueError):
+        _validate_date_str("2026-/../2026-03-31")
+
+
+def test_empty_string_rejected():
+    from server import _validate_date_str
+    with pytest.raises(ValueError):
+        _validate_date_str("")
+
+
+def test_wrong_format_rejected():
+    from server import _validate_date_str
+    with pytest.raises(ValueError):
+        _validate_date_str("31-03-2026")
