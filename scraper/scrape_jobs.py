@@ -466,6 +466,179 @@ def scrape_simplyhired(seen, profile, limit=10):
     return results[:limit]
 
 
+# ── RemoteOK JSON API ──────────────────────────────────────────────────────
+def scrape_remoteok(seen, profile, limit=15):
+    log.info("Scraping RemoteOK (API)...")
+    results = []
+
+    try:
+        resp = requests.get(
+            "https://remoteok.com/api",
+            headers={**HEADERS, "Accept": "application/json"},
+            timeout=15,
+        )
+        if resp.status_code != 200:
+            log.warning(f"RemoteOK API: status {resp.status_code}")
+            return results
+
+        jobs = resp.json()
+        # First element is a legal/metadata dict — skip it
+        if jobs and isinstance(jobs[0], dict) and "legal" in jobs[0]:
+            jobs = jobs[1:]
+
+        role_types = [r.lower() for r in profile.get("role_types", [])]
+        role_words = [r.split()[0] for r in role_types if r]
+
+        for job in jobs:
+            if len(results) >= limit:
+                break
+            try:
+                title    = (job.get("position") or "").strip()
+                company  = (job.get("company")  or "").strip()
+                location = (job.get("location") or "Remote").strip()
+                url      = (job.get("url") or
+                            f"https://remoteok.com/remote-jobs/{job.get('slug', job.get('id', ''))}")
+                desc_raw = job.get("description") or ""
+                description = BeautifulSoup(desc_raw, "html.parser").get_text(" ", strip=True)[:2000]
+                tags = [t.lower() for t in (job.get("tags") or [])]
+
+                if not title or not url:
+                    continue
+                if is_senior(title):
+                    continue
+                if profile.get("paid_only", True) and not looks_paid(description + " " + " ".join(tags)):
+                    continue
+
+                # If user has role preferences, require at least one tag or title match
+                if role_words:
+                    tag_match   = any(w in tag  for w in role_words for tag in tags)
+                    title_match = any(w in title.lower() for w in role_words)
+                    if not tag_match and not title_match:
+                        continue
+
+                jid = job_id(url, title, company)
+                if jid in seen:
+                    continue
+
+                results.append({
+                    "id":          jid,
+                    "source":      "remoteok",
+                    "title":       title,
+                    "company":     company,
+                    "location":    location,
+                    "url":         url,
+                    "description": description,
+                    "scraped_at":  datetime.now().isoformat(),
+                    "applied":     False,
+                    "status":      "new",
+                })
+                seen.add(jid)
+
+            except Exception as e:
+                log.debug(f"RemoteOK job parse error: {e}")
+                continue
+
+        human_delay(1, 2)
+
+    except Exception as e:
+        log.warning(f"RemoteOK failed: {e}")
+
+    log.info(f"RemoteOK: {len(results)} jobs")
+    return results[:limit]
+
+
+# ── Built In NYC ───────────────────────────────────────────────────────────
+def scrape_builtinnyc(seen, profile, limit=10):
+    """NYC startup/tech jobs. Only runs when location_preference is NYC."""
+    loc_pref = (profile.get("location_preference") or "").lower()
+    if "new york" not in loc_pref:
+        log.info("BuiltInNYC: skipping (location_preference is not NYC)")
+        return []
+
+    log.info("Scraping Built In NYC...")
+    results = []
+
+    urls = [
+        "https://www.builtinnyc.com/jobs",
+        "https://www.builtinnyc.com/jobs?search=intern",
+    ]
+
+    session = requests.Session()
+    session.headers.update(HEADERS)
+
+    for url in urls:
+        if len(results) >= limit:
+            break
+        try:
+            resp = session.get(url, timeout=15)
+            if resp.status_code != 200:
+                log.warning(f"BuiltInNYC: {resp.status_code} from {url}")
+                continue
+
+            soup = BeautifulSoup(resp.text, "html.parser")
+            cards = (
+                soup.select("article.job-card") or
+                soup.select("div.job-card") or
+                soup.select("[data-testid='job-card']") or
+                soup.select("li.job-card")
+            )
+            log.info(f"BuiltInNYC: {len(cards)} cards from {url}")
+
+            for card in cards[:15]:
+                try:
+                    title_el   = (card.select_one("h2")
+                                  or card.select_one("h3")
+                                  or card.select_one("[class*='title']"))
+                    company_el = (card.select_one("[class*='company']")
+                                  or card.select_one("[class*='employer']"))
+                    link_el    = (card.select_one("a[href*='/job/']")
+                                  or card.select_one("a[href*='/jobs/']")
+                                  or card.select_one("a"))
+                    loc_el     = (card.select_one("[class*='location']")
+                                  or card.select_one("[class*='Location']"))
+
+                    title    = title_el.get_text(strip=True)   if title_el   else ""
+                    company  = company_el.get_text(strip=True) if company_el else ""
+                    href     = (link_el.get("href") or "")     if link_el    else ""
+                    location = loc_el.get_text(strip=True)     if loc_el     else "New York, NY"
+                    url_full = (f"https://www.builtinnyc.com{href}"
+                                if href.startswith("/") else href)
+
+                    if not title or not url_full:
+                        continue
+                    if is_senior(title):
+                        continue
+
+                    jid = job_id(url_full, title, company)
+                    if jid in seen:
+                        continue
+
+                    results.append({
+                        "id":          jid,
+                        "source":      "builtinnyc",
+                        "title":       title,
+                        "company":     company,
+                        "location":    location,
+                        "url":         url_full,
+                        "description": "",
+                        "scraped_at":  datetime.now().isoformat(),
+                        "applied":     False,
+                        "status":      "new",
+                    })
+                    seen.add(jid)
+
+                except Exception:
+                    continue
+
+            human_delay(1, 2)
+
+        except Exception as e:
+            log.warning(f"BuiltInNYC failed: {e}")
+
+    log.info(f"BuiltInNYC: {len(results)} jobs")
+    return results[:limit]
+
+
 # ── Main orchestrator ──────────────────────────────────────────────────────
 def run_scraper(target=40):
     profile = load_profile()
@@ -475,8 +648,11 @@ def run_scraper(target=40):
     scrapers = [
         (scrape_indeed_rss,      25),
         (scrape_linkedin_public, 15),
+        (scrape_remoteok,        15),
         (scrape_simplyhired,     10),
+        (scrape_builtinnyc,      10),
     ]
+    target = 50
 
     for scraper_fn, lim in scrapers:
         try:
