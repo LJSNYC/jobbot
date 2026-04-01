@@ -49,6 +49,14 @@ log = logging.getLogger("scraper")
 
 load_dotenv(ROOT / ".env")
 
+
+def atomic_write(path: Path, data: str) -> None:
+    """Write data atomically: write to .tmp then rename, so crashes don't corrupt."""
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(data, encoding="utf-8")
+    tmp.replace(path)
+
+
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -140,7 +148,7 @@ def load_seen():
 
 
 def save_seen(seen):
-    SEEN_FILE.write_text(json.dumps(list(seen), indent=2))
+    atomic_write(SEEN_FILE, json.dumps(list(seen), indent=2))
 
 
 def job_id(url, title, company):
@@ -712,7 +720,7 @@ def run_scraper(target=40):
     save_seen(seen)  # Persist seen IDs so tomorrow's run skips today's jobs
 
     if all_jobs:
-        TODAY_FILE.write_text(json.dumps(all_jobs, indent=2))
+        atomic_write(TODAY_FILE, json.dumps(all_jobs, indent=2))
         log.info(f"Saved {len(all_jobs)} jobs to {TODAY_FILE}")
     else:
         log.warning("No jobs found — all sources returned 0 results")

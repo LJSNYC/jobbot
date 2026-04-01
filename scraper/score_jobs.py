@@ -19,6 +19,13 @@ PREFS_FILE = DATA_DIR / "preferences.json"
 
 log = logging.getLogger("score_jobs")
 
+
+def atomic_write(path: Path, data: str) -> None:
+    """Write data atomically: write to .tmp then rename, so crashes don't corrupt."""
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(data, encoding="utf-8")
+    tmp.replace(path)
+
 # ── Filler words to strip from titles ─────────────────────────────────────
 FILLER_WORDS = {
     "the", "and", "for", "a", "an", "of", "in", "at", "to", "or", "is",
@@ -147,7 +154,7 @@ def load_preferences() -> dict:
 
 def save_preferences(prefs: dict) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    PREFS_FILE.write_text(json.dumps(prefs, indent=2))
+    atomic_write(PREFS_FILE, json.dumps(prefs, indent=2))
 
 
 # ── Weight updates ────────────────────────────────────────────────────────
@@ -263,7 +270,7 @@ def score_all_jobs(jobs_file: Path | None = None) -> list[dict]:
         job = app.get("job", app)  # applications have job nested
         app["preference_score"] = score_job(job, prefs)
 
-    jobs_file.write_text(json.dumps(apps, indent=2))
+    atomic_write(jobs_file, json.dumps(apps, indent=2))
     log.info(f"Scored {len(apps)} jobs in {jobs_file.name}")
     return apps
 

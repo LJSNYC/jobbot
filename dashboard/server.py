@@ -48,6 +48,13 @@ def _validate_date_str(date_str: str) -> None:
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("dashboard")
 
+
+def atomic_write(path: Path, data: str) -> None:
+    """Write data atomically: write to .tmp then rename, so crashes don't corrupt."""
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(data, encoding="utf-8")
+    tmp.replace(path)
+
 app = Flask(__name__)
 CORS(app, origins=["http://localhost:5555"])
 
@@ -81,7 +88,7 @@ def save_apps(apps, date_str=None):
     else:
         _validate_date_str(date_str)
         f = APPS_DIR / f"applications_{date_str}.json"
-    f.write_text(json.dumps(apps, indent=2))
+    atomic_write(f, json.dumps(apps, indent=2))
 
 
 def find_app(apps, app_id):  # -> tuple[int, dict | None]
@@ -190,7 +197,7 @@ def update_application(app_id):
         if k in data:
             apps[idx][k] = data[k]
 
-    apps_file.write_text(json.dumps(apps, indent=2))
+    atomic_write(apps_file, json.dumps(apps, indent=2))
     return jsonify({"ok": True, "updated": app_id})
 
 
@@ -202,7 +209,7 @@ def approve_application(app_id):
         return jsonify({"error": "Not found"}), 404
 
     apps[idx]["status"] = "approved"
-    apps_file.write_text(json.dumps(apps, indent=2))
+    atomic_write(apps_file, json.dumps(apps, indent=2))
 
     apply_url = a.get("apply_info", {}).get("apply_url", "")
     return jsonify({
@@ -222,7 +229,7 @@ def mark_sent(app_id):
 
     apps[idx]["status"] = "sent"
     apps[idx]["sent_at"] = datetime.now().isoformat()
-    apps_file.write_text(json.dumps(apps, indent=2))
+    atomic_write(apps_file, json.dumps(apps, indent=2))
 
     sent_log = SENT_DIR / "sent_log.json"
     existing = json.loads(sent_log.read_text()) if sent_log.exists() else []
@@ -233,7 +240,7 @@ def mark_sent(app_id):
         "url": a.get("job", {}).get("url", ""),
         "sent_at": apps[idx]["sent_at"]
     })
-    sent_log.write_text(json.dumps(existing, indent=2))
+    atomic_write(sent_log, json.dumps(existing, indent=2))
 
     return jsonify({"ok": True, "sent_at": apps[idx]["sent_at"]})
 
@@ -244,7 +251,7 @@ def skip_application(app_id):
     if not a:
         return jsonify({"error": "Not found"}), 404
     apps[idx]["status"] = "skipped"
-    apps_file.write_text(json.dumps(apps, indent=2))
+    atomic_write(apps_file, json.dumps(apps, indent=2))
     return jsonify({"ok": True})
 
 
@@ -276,7 +283,7 @@ def feedback():
             new_status = "approved" if action == "approve" else "skipped"
             apps[idx]["status"] = new_status
             apps[idx]["preference_score"] = score_job(a.get("job", {}), prefs)
-            apps_file.write_text(json.dumps(apps, indent=2))
+            atomic_write(apps_file, json.dumps(apps, indent=2))
 
     return jsonify({"ok": True, "action": action, "weights": prefs["weights"]})
 
@@ -454,7 +461,7 @@ def load_blocked_companies() -> list:
 def save_blocked_companies(companies: list) -> None:
     """Save blocked companies list to data/blocked_companies.json."""
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    BLOCKED_COMPANIES_FILE.write_text(json.dumps(companies, indent=2))
+    atomic_write(BLOCKED_COMPANIES_FILE, json.dumps(companies, indent=2))
 
 
 @app.route("/api/blocked-companies", methods=["GET"])
@@ -504,7 +511,7 @@ def track_response(app_id):
         return jsonify({"error": "Not found"}), 404
 
     apps[idx]["response_status"] = status
-    apps_file.write_text(json.dumps(apps, indent=2))
+    atomic_write(apps_file, json.dumps(apps, indent=2))
     return jsonify({"ok": True, "response_status": status})
 
 

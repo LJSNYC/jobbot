@@ -83,6 +83,14 @@ log = logging.getLogger("drafter")
 
 load_dotenv(ROOT / ".env")
 
+
+def atomic_write(path: Path, data: str) -> None:
+    """Write data atomically: write to .tmp then rename, so crashes don't corrupt."""
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(data, encoding="utf-8")
+    tmp.replace(path)
+
+
 # ── Load profile ───────────────────────────────────────────────────────────
 def load_profile() -> dict:
     return json.loads((CONFIG_DIR / "profile.json").read_text())
@@ -459,7 +467,7 @@ def run_drafter(num_apps: int = 10) -> list[dict]:
         applications.append(application)
 
     # Save
-    TODAY_APPS_FILE.write_text(json.dumps(applications, indent=2))
+    atomic_write(TODAY_APPS_FILE, json.dumps(applications, indent=2))
     log.info(f"Saved {len(applications)} drafted applications to {TODAY_APPS_FILE}")
 
     return applications
