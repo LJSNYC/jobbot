@@ -66,6 +66,7 @@ APPS_DIR = DATA_DIR / "applications"
 APPS_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_DIR = ROOT / "config"
 LOG_DIR = ROOT / "logs"
+LOG_DIR.mkdir(exist_ok=True)
 
 logging.basicConfig(
     level=logging.INFO,
