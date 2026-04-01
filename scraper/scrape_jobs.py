@@ -143,7 +143,11 @@ def get_location_param(profile):  # -> str (URL-encoded city, state)
 # ── Seen IDs ───────────────────────────────────────────────────────────────
 def load_seen():
     if SEEN_FILE.exists():
-        return set(json.loads(SEEN_FILE.read_text()))
+        try:
+            return set(json.loads(SEEN_FILE.read_text()))
+        except (json.JSONDecodeError, ValueError):
+            log.warning("seen_ids.json is corrupted — starting with empty seen set")
+            return set()
     return set()
 
 

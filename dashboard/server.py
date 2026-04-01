@@ -232,7 +232,12 @@ def mark_sent(app_id):
     atomic_write(apps_file, json.dumps(apps, indent=2))
 
     sent_log = SENT_DIR / "sent_log.json"
-    existing = json.loads(sent_log.read_text()) if sent_log.exists() else []
+    existing = []
+    if sent_log.exists():
+        try:
+            existing = json.loads(sent_log.read_text())
+        except (json.JSONDecodeError, ValueError):
+            log.warning("sent_log.json is corrupted — starting fresh log")
     existing.append({
         "id": app_id,
         "title": a.get("job", {}).get("title", ""),
@@ -291,7 +296,12 @@ def feedback():
 @app.route("/api/stats")
 def stats():
     sent_log = SENT_DIR / "sent_log.json"
-    sent = json.loads(sent_log.read_text()) if sent_log.exists() else []
+    sent = []
+    if sent_log.exists():
+        try:
+            sent = json.loads(sent_log.read_text())
+        except (json.JSONDecodeError, ValueError):
+            sent = []
 
     apps_files = sorted(APPS_DIR.glob("applications_*.json"), reverse=True)
     today_apps = load_apps()
@@ -336,7 +346,12 @@ def application_history():
     for cover letters. Skipped jobs are excluded.
     """
     sent_log = SENT_DIR / "sent_log.json"
-    sent_records = json.loads(sent_log.read_text()) if sent_log.exists() else []
+    sent_records = []
+    if sent_log.exists():
+        try:
+            sent_records = json.loads(sent_log.read_text())
+        except (json.JSONDecodeError, ValueError):
+            sent_records = []
 
     # Build a quick lookup: app_id -> date string
     # Also scan all applications files for cover letters

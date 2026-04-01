@@ -93,7 +93,14 @@ def atomic_write(path: Path, data: str) -> None:
 
 # ── Load profile ───────────────────────────────────────────────────────────
 def load_profile() -> dict:
-    return json.loads((CONFIG_DIR / "profile.json").read_text())
+    p = CONFIG_DIR / "profile.json"
+    try:
+        return json.loads(p.read_text())
+    except (json.JSONDecodeError, ValueError):
+        raise RuntimeError(
+            "profile.json is missing or corrupted — "
+            "re-run setup at http://localhost:5555/setup"
+        )
 
 def load_resume() -> str:
     return (CONFIG_DIR / "resume.txt").read_text()
