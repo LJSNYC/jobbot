@@ -52,7 +52,7 @@ def check_spend_limit(api_key):  # -> tuple[bool, float]
     ok_to_proceed is False if we're at or over the daily limit.
     """
     spend = get_todays_spend(api_key)
-    log.info(f"Today's OpenAI spend so far: ${spend:.4f} (limit: ${DAILY_SPEND_LIMIT}")
+    log.info(f"Today's OpenAI spend so far: ${spend:.4f} (limit: ${DAILY_SPEND_LIMIT})")
     if spend >= DAILY_SPEND_LIMIT:
         log.warning(f"🚨 Daily spend limit reached (${spend:.4f} >= ${DAILY_SPEND_LIMIT}). Stopping AI generation.")
         return False, spend
@@ -66,10 +66,6 @@ APPS_DIR = DATA_DIR / "applications"
 APPS_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_DIR = ROOT / "config"
 LOG_DIR = ROOT / "logs"
-
-TODAY = date.today().isoformat()
-TODAY_JOBS_FILE = JOBS_DIR / f"jobs_{TODAY}.json"
-TODAY_APPS_FILE = APPS_DIR / f"applications_{TODAY}.json"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -373,9 +369,12 @@ def detect_apply_method(job, profile):  # job: dict, profile: dict -> dict
 
 # ── Main draft pipeline ────────────────────────────────────────────────────
 def run_drafter(num_apps: int = 10) -> list[dict]:
+    today = date.today().isoformat()
+    today_jobs_file = JOBS_DIR / f"jobs_{today}.json"
+    today_apps_file = APPS_DIR / f"applications_{today}.json"
     # Load today's jobs
-    if not TODAY_JOBS_FILE.exists():
-        log.error(f"No jobs file found for today: {TODAY_JOBS_FILE}")
+    if not today_jobs_file.exists():
+        log.error(f"No jobs file found for today: {today_jobs_file}")
         # Try the most recent file
         job_files = sorted(JOBS_DIR.glob("jobs_*.json"), reverse=True)
         if not job_files:
@@ -384,7 +383,7 @@ def run_drafter(num_apps: int = 10) -> list[dict]:
         log.info(f"Using most recent: {job_files[0]}")
         jobs = json.loads(job_files[0].read_text())
     else:
-        jobs = json.loads(TODAY_JOBS_FILE.read_text())
+        jobs = json.loads(today_jobs_file.read_text())
 
     log.info(f"Loaded {len(jobs)} jobs")
 
@@ -474,8 +473,8 @@ def run_drafter(num_apps: int = 10) -> list[dict]:
         applications.append(application)
 
     # Save
-    atomic_write(TODAY_APPS_FILE, json.dumps(applications, indent=2))
-    log.info(f"Saved {len(applications)} drafted applications to {TODAY_APPS_FILE}")
+    atomic_write(today_apps_file, json.dumps(applications, indent=2))
+    log.info(f"Saved {len(applications)} drafted applications to {today_apps_file}")
 
     return applications
 
