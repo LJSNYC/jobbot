@@ -640,7 +640,7 @@ def scrape_builtinnyc(seen, profile, limit=10):
 
 
 # ── Main orchestrator ──────────────────────────────────────────────────────
-def run_scraper(target=40):
+def run_scraper(target=50):
     profile = load_profile()
     seen = load_seen()  # Persistent across days — never re-scrapes the same job
     all_jobs = []
@@ -652,7 +652,6 @@ def run_scraper(target=40):
         (scrape_simplyhired,     10),
         (scrape_builtinnyc,      10),
     ]
-    target = 50
 
     for scraper_fn, lim in scrapers:
         try:

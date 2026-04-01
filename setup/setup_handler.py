@@ -9,6 +9,13 @@ import re
 from pathlib import Path
 
 
+def _atomic_write(path: Path, data: str) -> None:
+    """Write data atomically: write to .tmp then rename, so crashes don't corrupt."""
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(data, encoding="utf-8")
+    tmp.replace(path)
+
+
 def _sanitize_env_val(val: str) -> str:
     """Strip characters that would inject new lines into a .env file."""
     return re.sub(r'[\r\n\x00]', '', str(val))
@@ -43,7 +50,7 @@ def handle_setup(data: dict, root: Path) -> dict:
         "extra_context": profile.get("extra_context", ""),
         "resume_path": "config/resume.txt",
     }
-    (config_dir / "profile.json").write_text(json.dumps(profile_out, indent=2))
+    _atomic_write(config_dir / "profile.json", json.dumps(profile_out, indent=2))
 
     # ── Write resume.txt ───────────────────────────────────────────────────
     resume_text = profile.get("resume_text", "").strip()
@@ -83,6 +90,6 @@ def handle_setup(data: dict, root: Path) -> dict:
         "# Dashboard",
         "DASHBOARD_PORT=5555",
     ]
-    (root / ".env").write_text("\n".join(env_lines))
+    _atomic_write(root / ".env", "\n".join(env_lines))
 
     return {"ok": True, "profile_name": profile_out["name"]}

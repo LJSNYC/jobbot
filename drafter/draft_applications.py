@@ -335,6 +335,8 @@ def detect_apply_method(job, profile):  # job: dict, profile: dict -> dict
 
 # ── Main draft pipeline ────────────────────────────────────────────────────
 def run_drafter(num_apps: int = 10) -> list[dict]:
+    # Respect JOBBOT_DAILY_CAP env var set by dashboard's scrape runner
+    num_apps = int(os.getenv("JOBBOT_DAILY_CAP", str(num_apps)))
     today = date.today().isoformat()
     today_jobs_file = JOBS_DIR / f"jobs_{today}.json"
     today_apps_file = APPS_DIR / f"applications_{today}.json"
